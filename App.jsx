@@ -13,7 +13,7 @@ const apiKey = "";
 const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
 const IMAGE_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent?key=${apiKey}`;
 
-// --- Firebase Setup (Rule 1 & 3 Compliant) ---
+// --- Firebase Setup ---
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -55,12 +55,6 @@ const fetchWithBackoff = async (url, options, retries = 3, delay = 1000) => {
   }
 };
 
-const cleanJSONResponse = (text) => {
-  const match = text.match(/
-
-  return match ? match[1] : text;
-};
-
 const generateImage = async (prompt) => {
   const payload = {
     contents: [{ parts: [{ text: prompt }] }],
@@ -84,11 +78,11 @@ const generateJSON = async (prompt, schema) => {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
   });
-  const text = result.candidates[0].content.parts[0].text;
-  return JSON.parse(cleanJSONResponse(text));
+  // Since we use application/json, we don't need markdown regex cleaning anymore
+  return JSON.parse(result.candidates[0].content.parts[0].text);
 };
 
-// --- Custom CSS for AAA Animations ---
+// --- Custom CSS ---
 const aaaStyles = `
   @keyframes screenShake {
     0% { transform: translate(1px, 1px) rotate(0deg); }
@@ -104,14 +98,8 @@ const aaaStyles = `
     100% { transform: translate(1px, -2px) rotate(-1deg); }
   }
   .animate-shake { animation: screenShake 0.3s cubic-bezier(.36,.07,.19,.97) both; }
-  
-  @keyframes float {
-    0% { transform: translateY(0px); }
-    50% { transform: translateY(-10px); }
-    100% { transform: translateY(0px); }
-  }
+  @keyframes float { 0%, 100% { transform: translateY(0px); } 50% { transform: translateY(-10px); } }
   .animate-float { animation: float 4s ease-in-out infinite; }
-  
   .glass-panel {
     background: rgba(15, 23, 42, 0.7);
     backdrop-filter: blur(12px);
@@ -119,14 +107,12 @@ const aaaStyles = `
     border: 1px solid rgba(255, 255, 255, 0.1);
     box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
   }
-  
   .text-glow { text-shadow: 0 0 10px rgba(96, 165, 250, 0.8); }
-  .text-glow-red { text-shadow: 0 0 10px rgba(248, 113, 113, 0.8); }
 `;
 
 export default function App() {
   const [user, setUser] = useState(null);
-  const [view, setView] = useState('loading'); // loading, home, map, study, combat
+  const [view, setView] = useState('loading'); 
   const [loadingText, setLoadingText] = useState('INITIALIZING NEURAL LINK...');
   
   // Data
@@ -224,7 +210,7 @@ export default function App() {
       const bossImage = await generateImage(`AAA game asset, 2d digital art, One piece anime style, ${bossData.imagePrompt}, full body, cinematic dramatic lighting, dark background, highly detailed`);
       
       setActiveBoss({ ...bossData, maxHp: bossData.hp, imageBase64: bossImage || "" });
-      setView('study'); // Go to course creation to unlock the boss
+      setView('study'); 
     } catch (e) {
       console.error(e);
       alert("Radar failed. Try scanning again.");
@@ -327,7 +313,7 @@ export default function App() {
       return;
     }
 
-    // BOSS TURN (Delay for dramatic effect)
+    // BOSS TURN
     setTimeout(() => {
       const bossDmg = Math.floor(Math.random() * activeBoss.attack) + 8;
       const afterBossHp = Math.max(0, newPlayerHp - bossDmg);
@@ -388,7 +374,7 @@ export default function App() {
     setView('home');
   };
 
-  // --- UI Components ---
+  // --- Shared Components ---
   const ProgressBar = ({ current, max, colorClass, label }) => (
     <div className="w-full">
       <div className="flex justify-between text-[10px] font-bold tracking-widest text-slate-400 mb-1">
@@ -414,7 +400,7 @@ export default function App() {
       <h1 className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-emerald-400 font-black tracking-[0.2em] text-sm flex-1 text-center">
         {title}
       </h1>
-      {showBack && <div className="w-9" />} {/* Spacer */}
+      {showBack && <div className="w-9" />} 
     </div>
   );
 
@@ -450,14 +436,10 @@ export default function App() {
   const renderHome = () => (
     <div className="flex flex-col h-full bg-slate-950 relative overflow-hidden">
       <TopBar title="NEXUS PROFILE" />
-      
-      {/* Background decorations */}
       <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[30%] bg-blue-600/20 blur-[100px] rounded-full" />
       <div className="absolute bottom-[10%] right-[-10%] w-[50%] h-[30%] bg-emerald-600/10 blur-[100px] rounded-full" />
 
       <div className="flex-1 overflow-y-auto p-6 pb-28 relative z-10 space-y-6">
-        
-        {/* Avatar Section */}
         <div className="flex flex-col items-center mt-4">
           <div className="relative group">
             <div className="absolute -inset-1 bg-gradient-to-r from-blue-500 to-emerald-500 rounded-full blur opacity-50 group-hover:opacity-100 transition duration-1000"></div>
@@ -472,17 +454,14 @@ export default function App() {
               LVL {STAGES[profile?.stage || 0].level}: {STAGES[profile?.stage || 0].name}
             </div>
           </div>
-          
           <h2 className="mt-6 text-xl font-bold text-white tracking-wide">{STAGES[profile?.stage || 0].title}</h2>
           <p className="text-xs text-slate-400 mt-1 tracking-widest uppercase">Courses Mastered: <span className="text-emerald-400 font-bold">{profile?.coursesCompleted}</span></p>
         </div>
 
-        {/* Stats Card */}
         <div className="glass-panel rounded-2xl p-5 mt-6">
            <ProgressBar current={profile?.hp} max={profile?.maxHp} colorClass="bg-rose-500" label="VITALITY (HP)" />
         </div>
 
-        {/* Skills Loadout */}
         <div>
           <h3 className="text-xs font-black tracking-widest text-slate-500 mb-3 ml-2 flex items-center gap-2">
             <Sparkles size={14} /> ACTIVE SKILLS
@@ -496,7 +475,6 @@ export default function App() {
             ))}
           </div>
         </div>
-
       </div>
       <BottomNav />
     </div>
@@ -508,7 +486,6 @@ export default function App() {
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(225,29,72,0.05)_0,transparent_70%)]" />
       
       <div className="flex-1 flex flex-col items-center justify-center p-6 text-center z-10 space-y-12 pb-20">
-        
         <div className="relative">
           <div className="absolute inset-0 border border-rose-500/30 rounded-full animate-[ping_3s_cubic-bezier(0,0,0.2,1)_infinite]" />
           <div className="absolute inset-4 border border-rose-500/50 rounded-full animate-[ping_2s_cubic-bezier(0,0,0.2,1)_infinite_0.5s]" />
@@ -524,10 +501,7 @@ export default function App() {
           </p>
         </div>
 
-        <button 
-          onClick={handleGenerateBoss}
-          className="relative w-full max-w-[250px] group overflow-hidden rounded-xl bg-rose-600 p-1 active:scale-95 transition-all duration-300 shadow-[0_0_20px_rgba(225,29,72,0.4)]"
-        >
+        <button onClick={handleGenerateBoss} className="relative w-full max-w-[250px] group overflow-hidden rounded-xl bg-rose-600 p-1 active:scale-95 transition-all duration-300 shadow-[0_0_20px_rgba(225,29,72,0.4)]">
           <div className="absolute inset-0 bg-gradient-to-r from-rose-400 to-rose-600 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
           <div className="relative bg-slate-950 px-6 py-4 rounded-lg flex items-center justify-center gap-3">
             <Skull size={20} className="text-rose-500" />
@@ -547,10 +521,8 @@ export default function App() {
     return (
       <div className="flex flex-col h-full bg-slate-950 text-white relative">
         <TopBar title={activeCourseId ? "ACTIVE PROTOCOL" : "ARCHIVE TERMINAL"} showBack />
-        
         <div className="flex-1 overflow-y-auto p-4 space-y-6 pb-28">
           
-          {/* Active Boss Target Hint */}
           {activeBoss && !activeCourseId && (
             <div className="glass-panel p-4 rounded-2xl border-rose-500/30 relative overflow-hidden">
               <div className="absolute right-0 top-0 w-32 h-32 bg-rose-500/10 blur-2xl rounded-full translate-x-1/2 -translate-y-1/2" />
@@ -569,7 +541,6 @@ export default function App() {
             </div>
           )}
 
-          {/* Generator Form */}
           {!activeCourseId && (
             <form onSubmit={handleCreateCourse} className="space-y-6 mt-6">
               <div className="space-y-2">
@@ -586,17 +557,12 @@ export default function App() {
                   <BookOpen className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-600" size={20} />
                 </div>
               </div>
-
-              <button 
-                type="submit"
-                className="w-full py-4 bg-gradient-to-r from-blue-600 to-emerald-600 hover:from-blue-500 hover:to-emerald-500 text-white rounded-xl font-black tracking-widest text-xs shadow-[0_0_20px_rgba(59,130,246,0.3)] active:scale-95 transition-all flex items-center justify-center gap-2"
-              >
+              <button type="submit" className="w-full py-4 bg-gradient-to-r from-blue-600 to-emerald-600 hover:from-blue-500 hover:to-emerald-500 text-white rounded-xl font-black tracking-widest text-xs shadow-[0_0_20px_rgba(59,130,246,0.3)] active:scale-95 transition-all flex items-center justify-center gap-2">
                 COMPILE MODULE
               </button>
             </form>
           )}
 
-          {/* Active Course View */}
           {activeCourseId && course && (
             <div className="space-y-4">
               <div className="glass-panel p-5 rounded-2xl relative overflow-hidden">
@@ -621,9 +587,7 @@ export default function App() {
                       onClick={() => completeChapter(chap.id)}
                       disabled={chap.completed}
                       className={`w-full py-3 rounded-lg font-bold text-xs tracking-widest transition-all ${
-                        chap.completed 
-                          ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 opacity-50 cursor-not-allowed' 
-                          : 'bg-blue-600/20 text-blue-400 border border-blue-500/30 hover:bg-blue-600/30 active:scale-95'
+                        chap.completed ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 opacity-50 cursor-not-allowed' : 'bg-blue-600/20 text-blue-400 border border-blue-500/30 hover:bg-blue-600/30 active:scale-95'
                       }`}
                     >
                       {chap.completed ? 'VERIFIED' : 'MARK ASSIMILATED'}
@@ -633,10 +597,7 @@ export default function App() {
               </div>
 
               {allCompleted && activeBoss && (
-                <button 
-                  onClick={startCombat}
-                  className="w-full mt-8 py-5 bg-rose-600 text-white rounded-xl font-black tracking-[0.2em] text-sm shadow-[0_0_30px_rgba(225,29,72,0.6)] animate-pulse active:scale-95 transition-transform"
-                >
+                <button onClick={startCombat} className="w-full mt-8 py-5 bg-rose-600 text-white rounded-xl font-black tracking-[0.2em] text-sm shadow-[0_0_30px_rgba(225,29,72,0.6)] animate-pulse active:scale-95 transition-transform">
                   INITIALIZE COMBAT
                 </button>
               )}
@@ -650,19 +611,13 @@ export default function App() {
 
   const renderCombat = () => {
     if (!combatState) return null;
-
     return (
       <div className="flex flex-col h-[100dvh] bg-slate-950 text-white relative overflow-hidden">
         <style>{aaaStyles}</style>
-        
-        {/* Arena Background */}
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(225,29,72,0.15)_0,transparent_50%),radial-gradient(ellipse_at_bottom,rgba(59,130,246,0.15)_0,transparent_50%)]" />
 
-        {/* --- Top Half: Boss --- */}
         <div className={`flex-1 flex flex-col items-end justify-start p-6 pt-12 relative z-10 transition-transform ${isHitBoss ? 'animate-shake' : ''}`}>
           <div className="w-[80%] max-w-sm flex items-start gap-4 flex-row-reverse">
-            
-            {/* Boss Image */}
             <div className="relative shrink-0">
               <div className="absolute inset-0 bg-rose-500 rounded-full blur-md opacity-50" />
               <div className={`w-24 h-24 rounded-full border-2 bg-slate-900 overflow-hidden relative z-10 transition-colors ${isHitBoss ? 'border-rose-400 bg-rose-900' : 'border-rose-900/50'}`}>
@@ -670,8 +625,6 @@ export default function App() {
               </div>
               {combatState.turn === 'boss' && <div className="absolute -bottom-2 right-1/2 translate-x-1/2 bg-rose-600 text-white text-[9px] font-black tracking-widest px-2 py-0.5 rounded shadow-[0_0_10px_rgba(225,29,72,0.8)] z-20">ATTACKING</div>}
             </div>
-
-            {/* Boss Stats */}
             <div className="flex-1 glass-panel rounded-xl p-3 flex flex-col justify-center">
               <h3 className="text-xs font-black tracking-widest text-rose-400 mb-2 truncate text-right">{activeBoss?.name}</h3>
               <ProgressBar current={combatState.bossHp} max={activeBoss?.maxHp} colorClass="bg-rose-500" label="HP" />
@@ -679,17 +632,11 @@ export default function App() {
           </div>
         </div>
 
-        {/* --- VS Divider --- */}
         <div className="absolute top-1/2 left-0 w-full h-px bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-y-1/2 z-0" />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-slate-700/50 font-black text-6xl italic tracking-tighter z-0 pointer-events-none">
-          VS
-        </div>
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-slate-700/50 font-black text-6xl italic tracking-tighter z-0 pointer-events-none">VS</div>
 
-        {/* --- Bottom Half: Player --- */}
         <div className={`flex-1 flex flex-col items-start justify-end p-6 pb-4 relative z-10 transition-transform ${isHitPlayer ? 'animate-shake' : ''}`}>
           <div className="w-[80%] max-w-sm flex items-end gap-4">
-            
-            {/* Player Image */}
             <div className="relative shrink-0">
               <div className="absolute inset-0 bg-blue-500 rounded-full blur-md opacity-50" />
               <div className={`w-24 h-24 rounded-full border-2 bg-slate-900 overflow-hidden relative z-10 transition-colors ${isHitPlayer ? 'border-rose-400 bg-rose-900' : 'border-blue-500/50'}`}>
@@ -697,8 +644,6 @@ export default function App() {
               </div>
               {combatState.turn === 'player' && <div className="absolute -top-2 right-1/2 translate-x-1/2 bg-blue-500 text-white text-[9px] font-black tracking-widest px-2 py-0.5 rounded shadow-[0_0_10px_rgba(59,130,246,0.8)] z-20 animate-pulse">YOUR TURN</div>}
             </div>
-
-            {/* Player Stats */}
             <div className="flex-1 glass-panel rounded-xl p-3 flex flex-col justify-center">
               <h3 className="text-xs font-black tracking-widest text-blue-400 mb-2 truncate">NEXUS AVATAR</h3>
               <ProgressBar current={combatState.playerHp} max={profile?.maxHp} colorClass="bg-emerald-400" label="HP" />
@@ -706,50 +651,26 @@ export default function App() {
           </div>
         </div>
 
-        {/* --- Combat Control Deck --- */}
         <div className="h-64 bg-slate-900 border-t border-slate-700/50 rounded-t-3xl shadow-[0_-20px_50px_rgba(0,0,0,0.5)] z-20 flex flex-col">
-          
-          {/* Action Log */}
           <div className="h-20 bg-slate-950/50 overflow-y-auto p-3 px-6 space-y-1 text-xs font-mono border-b border-slate-800">
             {combatLog.map((log, i) => (
-              <div key={i} className={`opacity-80 ${
-                log.type === 'player' ? 'text-blue-300' : 
-                log.type === 'boss' ? 'text-rose-400' : 
-                log.type === 'heal' ? 'text-emerald-400' : 'text-slate-500'
-              }`}>
+              <div key={i} className={`opacity-80 ${log.type === 'player' ? 'text-blue-300' : log.type === 'boss' ? 'text-rose-400' : log.type === 'heal' ? 'text-emerald-400' : 'text-slate-500'}`}>
                 {'> '} {log.text}
               </div>
             ))}
             <div ref={logEndRef} />
           </div>
-
-          {/* Action Buttons */}
           <div className="flex-1 p-4 grid grid-cols-2 gap-3 overflow-y-auto">
-             <button 
-                onClick={() => executeTurn('attack')}
-                disabled={combatState.turn !== 'player'}
-                className="glass-panel py-3 rounded-xl border border-slate-700 flex flex-col items-center justify-center gap-1 active:scale-95 disabled:opacity-30 transition-all hover:bg-slate-800"
-              >
+             <button onClick={() => executeTurn('attack')} disabled={combatState.turn !== 'player'} className="glass-panel py-3 rounded-xl border border-slate-700 flex flex-col items-center justify-center gap-1 active:scale-95 disabled:opacity-30 transition-all hover:bg-slate-800">
                 <Swords size={18} className="text-slate-300" /> 
                 <span className="text-[10px] font-black tracking-widest text-slate-400">STRIKE</span>
               </button>
-              
-              <button 
-                onClick={() => executeTurn('heal')}
-                disabled={combatState.turn !== 'player'}
-                className="glass-panel py-3 rounded-xl border border-emerald-900/50 bg-emerald-950/20 flex flex-col items-center justify-center gap-1 active:scale-95 disabled:opacity-30 transition-all hover:bg-emerald-900/40"
-              >
+              <button onClick={() => executeTurn('heal')} disabled={combatState.turn !== 'player'} className="glass-panel py-3 rounded-xl border border-emerald-900/50 bg-emerald-950/20 flex flex-col items-center justify-center gap-1 active:scale-95 disabled:opacity-30 transition-all hover:bg-emerald-900/40">
                 <Heart size={18} className="text-emerald-500" /> 
                 <span className="text-[10px] font-black tracking-widest text-emerald-600">RECOVER</span>
               </button>
-              
               {profile?.skills.map((skill, idx) => (
-                <button 
-                  key={idx}
-                  onClick={() => executeTurn('skill', skill)}
-                  disabled={combatState.turn !== 'player'}
-                  className="glass-panel py-3 col-span-2 rounded-xl border border-blue-900/50 bg-blue-950/10 flex flex-row items-center justify-between px-6 active:scale-95 disabled:opacity-30 transition-all hover:bg-blue-900/30"
-                >
+                <button key={idx} onClick={() => executeTurn('skill', skill)} disabled={combatState.turn !== 'player'} className="glass-panel py-3 col-span-2 rounded-xl border border-blue-900/50 bg-blue-950/10 flex flex-row items-center justify-between px-6 active:scale-95 disabled:opacity-30 transition-all hover:bg-blue-900/30">
                   <div className="flex items-center gap-3">
                     <Sparkles size={16} className={skill.color} />
                     <span className={`text-xs font-black tracking-wider ${skill.color}`}>{skill.name.toUpperCase()}</span>
@@ -775,3 +696,5 @@ export default function App() {
     </div>
   );
 }
+
+
