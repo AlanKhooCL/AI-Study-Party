@@ -9,7 +9,6 @@ import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged }
 import { getFirestore, collection, doc, setDoc, getDoc, updateDoc, onSnapshot, addDoc } from 'firebase/firestore';
 
 // --- API Setup ---
-// Uses your .env file. If it can't find it, it will trigger the crash screen safely.
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
 const IMAGE_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${apiKey}`;
@@ -27,15 +26,11 @@ const firebaseConfig = {
 
 const appId = "ai-study-party-v1";
 
-// --- SAFE INITIALIZATION (Prevents the Blank Screen of Death) ---
+// --- SAFE INITIALIZATION ---
 let app, auth, db, fatalInitError = null;
 
 try {
-  if (!apiKey) {
-    throw new Error("Gemini API Key is missing! Make sure your .env file is created and Vite has been restarted.");
-  }
-  
-  // These are the lines that went missing!
+  if (!apiKey) throw new Error("Gemini API Key is missing! Check your .env file.");
   app = initializeApp(firebaseConfig);
   auth = getAuth(app);
   db = getFirestore(app);
@@ -68,8 +63,9 @@ const fetchWithBackoff = async (url, options, retries = 3, delay = 1000) => {
   for (let i = 0; i < retries; i++) {
     try {
       const response = await fetch(url, options);
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-      return await response.json();
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error?.message || `HTTP error! status: ${response.status}`);
+      return data;
     } catch (error) {
       if (i === retries - 1) throw error;
       await new Promise(res => setTimeout(res, delay));
@@ -78,19 +74,25 @@ const fetchWithBackoff = async (url, options, retries = 3, delay = 1000) => {
   }
 };
 
-const generateImage = async (prompt) => {
-  const payload = {
-    instances: [ { prompt: prompt } ],
-    parameters: { sampleCount: 1 }
-  };
-  const result = await fetchWithBackoff(IMAGE_API_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
-  
-  // Imagen returns base64 data inside the predictions array
-  return result.predictions?.[0]?.bytesBase64Encoded || null;
+// Auto-Fallback Image Generator
+const generateImage = async (prompt, fallbackSeed, style = 'adventurer') => {
+  try {
+    const payload = { instances: [{ prompt: prompt }], parameters: { sampleCount: 1 } };
+    const result = await fetchWithBackoff(IMAGE_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    
+    if (result.predictions?.[0]?.bytesBase64Encoded) {
+      return result.predictions[0].bytesBase64Encoded;
+    }
+    throw new Error("Invalid format from Gemini");
+  } catch (error) {
+    console.warn("Google Imagen blocked/failed. Engaging procedural fallback...", error);
+    // Returns a dynamic URL instead of base64 if Gemini fails
+    return `https://api.dicebear.com/7.x/${style}/svg?seed=${encodeURIComponent(fallbackSeed)}&backgroundColor=transparent`;
+  }
 };
 
 const generateJSON = async (prompt, schema) => {
@@ -105,6 +107,9 @@ const generateJSON = async (prompt, schema) => {
   });
   return JSON.parse(result.candidates[0].content.parts[0].text);
 };
+
+// Helper to handle mixed base64 and standard URLs
+const getImageSrc = (data) => data.startsWith('http') ? data : `data:image/jpeg;base64,${data}`;
 
 // --- Custom CSS ---
 const aaaStyles = `
@@ -135,16 +140,13 @@ const aaaStyles = `
 `;
 
 export default function App() {
-  // --- CRASH SCREEN RENDERER ---
   if (fatalInitError) {
     return (
       <div className="min-h-screen bg-red-950 text-red-200 flex flex-col items-center justify-center p-6 text-center font-mono">
         <Skull size={48} className="text-red-500 mb-4 animate-bounce" />
         <h1 className="text-xl font-bold mb-4 text-white">SYSTEM CRASH PREVENTED</h1>
         <p className="mb-4 text-sm">The app halted before loading because:</p>
-        <div className="bg-black/50 p-4 rounded text-xs w-full max-w-md break-words border border-red-500/50 text-red-400">
-          {fatalInitError}
-        </div>
+        <div className="bg-black/50 p-4 rounded text-xs w-full max-w-md break-words border border-red-500/50 text-red-400">{fatalInitError}</div>
       </div>
     );
   }
@@ -153,32 +155,24 @@ export default function App() {
   const [view, setView] = useState('loading'); 
   const [loadingText, setLoadingText] = useState('INITIALIZING NEURAL LINK...');
   
-  // Data
   const [profile, setProfile] = useState(null);
   const [courses, setCourses] = useState([]);
   const [chapters, setChapters] = useState([]);
   const [activeBoss, setActiveBoss] = useState(null);
   const [activeCourseId, setActiveCourseId] = useState(null);
   
-  // Combat State
   const [combatState, setCombatState] = useState(null);
   const [combatLog, setCombatLog] = useState([]);
   const [isHitPlayer, setIsHitPlayer] = useState(false);
   const [isHitBoss, setIsHitBoss] = useState(false);
 
-  // Form
   const [courseTopic, setCourseTopic] = useState('');
   const logEndRef = useRef(null);
 
-  // --- Auth & Data Listeners ---
   useEffect(() => {
     const initAuth = async () => {
       try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-          await signInAnonymously(auth);
-        }
+        await signInAnonymously(auth);
       } catch (e) { console.error("Auth Error", e); }
     };
     initAuth();
@@ -197,7 +191,7 @@ export default function App() {
       } else {
         setLoadingText('GENERATING AVATAR...');
         try {
-          const initialImage = await generateImage("AAA game asset, high resolution, 2d digital art, cute chibi style baby, realistic person theme, cinematic lighting, dark fantasy background, highly detailed RPG portrait");
+          const initialImage = await generateImage("AAA game asset, high resolution, 2d digital art, cute chibi style baby, realistic person theme, cinematic lighting, dark fantasy background, highly detailed RPG portrait", "Hero-Baby", "adventurer");
           const newProfile = {
             stage: 0,
             hp: 100,
@@ -210,8 +204,8 @@ export default function App() {
           setProfile(newProfile);
           setView('home');
         } catch (error) {
-           console.error("Failed to generate avatar.", error);
-           alert("Could not connect to Gemini API. Please check your API key!");
+           console.error("Critical failure generating initial profile.", error);
+           alert("Could not connect to Gemini API. Check your internet connection.");
         }
       }
     }, console.error);
@@ -229,7 +223,6 @@ export default function App() {
     logEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [combatLog]);
 
-  // --- Actions ---
   const handleGenerateBoss = async () => {
     setView('loading');
     setLoadingText('SCANNING GRAND LINE FOR THREATS...');
@@ -250,7 +243,7 @@ export default function App() {
       );
 
       setLoadingText('RENDERING THREAT VISUALS...');
-      const bossImage = await generateImage(`AAA game asset, 2d digital art, One piece anime style, ${bossData.imagePrompt}, full body, cinematic dramatic lighting, dark background, highly detailed`);
+      const bossImage = await generateImage(`AAA game asset, 2d digital art, One piece anime style, ${bossData.imagePrompt}, full body, cinematic dramatic lighting, dark background, highly detailed`, bossData.name, "bottts");
       
       setActiveBoss({ ...bossData, maxHp: bossData.hp, imageBase64: bossImage || "" });
       setView('study'); 
@@ -337,7 +330,6 @@ export default function App() {
     let newBossHp = combatState.bossHp;
     let newPlayerHp = combatState.playerHp;
     
-    // PLAYER TURN
     if (actionType === 'attack' || actionType === 'skill') {
       const dmg = skill ? skill.power + Math.floor(Math.random()*10) : 15 + Math.floor(Math.random()*5);
       newBossHp = Math.max(0, newBossHp - dmg);
@@ -356,7 +348,6 @@ export default function App() {
       return;
     }
 
-    // BOSS TURN
     setTimeout(() => {
       const bossDmg = Math.floor(Math.random() * activeBoss.attack) + 8;
       const afterBossHp = Math.max(0, newPlayerHp - bossDmg);
@@ -383,14 +374,11 @@ export default function App() {
     let newImageBase64 = profile.imageBase64;
     const newCoursesCompleted = profile.coursesCompleted + 1;
 
-    // Evolve every 2 courses
     if (newCoursesCompleted % 2 === 0 && newStage < STAGES.length - 1) {
       newStage += 1;
       setLoadingText(`EVOLVING TO: ${STAGES[newStage].name.toUpperCase()}...`);
-      try {
-        const nextPrompt = `AAA game asset, high resolution, 2d digital art, chibi style ${STAGES[newStage].name.toLowerCase()}, realistic person theme, cinematic lighting, dark fantasy background, highly detailed RPG portrait`;
-        newImageBase64 = await generateImage(nextPrompt) || newImageBase64;
-      } catch (e) { console.error("Evolution visual failed", e); }
+      const nextPrompt = `AAA game asset, high resolution, 2d digital art, chibi style ${STAGES[newStage].name.toLowerCase()}, realistic person theme, cinematic lighting, dark fantasy background, highly detailed RPG portrait`;
+      newImageBase64 = await generateImage(nextPrompt, `Hero-${STAGES[newStage].name}`, "adventurer") || newImageBase64;
     }
 
     await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'main'), {
@@ -417,7 +405,6 @@ export default function App() {
     setView('home');
   };
 
-  // --- Shared Components ---
   const ProgressBar = ({ current, max, colorClass, label }) => (
     <div className="w-full">
       <div className="flex justify-between text-[10px] font-bold tracking-widest text-slate-400 mb-1">
@@ -464,7 +451,6 @@ export default function App() {
     </div>
   );
 
-  // --- Render Views ---
   const renderLoading = () => (
     <div className="flex-1 bg-slate-950 flex flex-col items-center justify-center text-white relative overflow-hidden">
       <style>{aaaStyles}</style>
@@ -488,7 +474,7 @@ export default function App() {
             <div className="absolute -inset-1 bg-gradient-to-r from-blue-500 to-emerald-500 rounded-full blur opacity-50 group-hover:opacity-100 transition duration-1000"></div>
             <div className="relative w-40 h-40 rounded-full border-2 border-slate-700/50 bg-slate-900 overflow-hidden shadow-2xl flex items-center justify-center">
               {profile?.imageBase64 ? (
-                <img src={`data:image/jpeg;base64,${profile.imageBase64}`} alt="Avatar" className="w-full h-full object-cover" />
+                <img src={getImageSrc(profile.imageBase64)} alt="Avatar" className="w-full h-full object-cover" />
               ) : (
                 <User size={48} className="text-slate-600" />
               )}
@@ -572,7 +558,7 @@ export default function App() {
               <div className="flex items-center gap-4 relative z-10">
                 <div className="w-16 h-16 rounded-xl overflow-hidden border border-rose-500/50 shrink-0 shadow-[0_0_15px_rgba(225,29,72,0.3)]">
                   {activeBoss.imageBase64 ? 
-                    <img src={`data:image/jpeg;base64,${activeBoss.imageBase64}`} alt="Target" className="w-full h-full object-cover" /> : 
+                    <img src={getImageSrc(activeBoss.imageBase64)} alt="Target" className="w-full h-full object-cover" /> : 
                     <div className="w-full h-full bg-slate-800" />}
                 </div>
                 <div>
@@ -664,7 +650,7 @@ export default function App() {
             <div className="relative shrink-0">
               <div className="absolute inset-0 bg-rose-500 rounded-full blur-md opacity-50" />
               <div className={`w-24 h-24 rounded-full border-2 bg-slate-900 overflow-hidden relative z-10 transition-colors ${isHitBoss ? 'border-rose-400 bg-rose-900' : 'border-rose-900/50'}`}>
-                {activeBoss?.imageBase64 && <img src={`data:image/jpeg;base64,${activeBoss.imageBase64}`} alt="Boss" className={`w-full h-full object-cover ${isHitBoss ? 'mix-blend-luminosity' : ''}`} />}
+                {activeBoss?.imageBase64 && <img src={getImageSrc(activeBoss.imageBase64)} alt="Boss" className={`w-full h-full object-cover ${isHitBoss ? 'mix-blend-luminosity' : ''}`} />}
               </div>
               {combatState.turn === 'boss' && <div className="absolute -bottom-2 right-1/2 translate-x-1/2 bg-rose-600 text-white text-[9px] font-black tracking-widest px-2 py-0.5 rounded shadow-[0_0_10px_rgba(225,29,72,0.8)] z-20">ATTACKING</div>}
             </div>
@@ -683,7 +669,7 @@ export default function App() {
             <div className="relative shrink-0">
               <div className="absolute inset-0 bg-blue-500 rounded-full blur-md opacity-50" />
               <div className={`w-24 h-24 rounded-full border-2 bg-slate-900 overflow-hidden relative z-10 transition-colors ${isHitPlayer ? 'border-rose-400 bg-rose-900' : 'border-blue-500/50'}`}>
-                {profile?.imageBase64 && <img src={`data:image/jpeg;base64,${profile.imageBase64}`} alt="Player" className={`w-full h-full object-cover ${isHitPlayer ? 'mix-blend-luminosity' : ''}`} />}
+                {profile?.imageBase64 && <img src={getImageSrc(profile.imageBase64)} alt="Player" className={`w-full h-full object-cover ${isHitPlayer ? 'mix-blend-luminosity' : ''}`} />}
               </div>
               {combatState.turn === 'player' && <div className="absolute -top-2 right-1/2 translate-x-1/2 bg-blue-500 text-white text-[9px] font-black tracking-widest px-2 py-0.5 rounded shadow-[0_0_10px_rgba(59,130,246,0.8)] z-20 animate-pulse">YOUR TURN</div>}
             </div>
