@@ -11,8 +11,8 @@ import { getFirestore, collection, doc, setDoc, getDoc, updateDoc, onSnapshot, a
 // --- API Setup ---
 // Uses your .env file. If it can't find it, it will trigger the crash screen safely.
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
-const IMAGE_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent?key=${apiKey}`;
+const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+const IMAGE_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${apiKey}`;
 
 // --- Firebase Setup ---
 const firebaseConfig = {
