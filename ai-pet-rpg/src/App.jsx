@@ -2,11 +2,12 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Heart, Zap, BookOpen, Skull, Send, Shield, 
   Swords, ArrowLeft, Loader2, Sparkles, GraduationCap,
-  Crown, Map as MapIcon, User, ChevronRight, Crosshair
+  Crown, Map as MapIcon, User, ChevronRight, Crosshair,
+  ChevronDown, XCircle
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, doc, setDoc, getDoc, updateDoc, onSnapshot, addDoc } from 'firebase/firestore';
+import { getFirestore, collection, doc, setDoc, getDoc, updateDoc, onSnapshot, addDoc, deleteDoc } from 'firebase/firestore';
 
 // --- API Setup ---
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
@@ -74,7 +75,6 @@ const fetchWithBackoff = async (url, options, retries = 3, delay = 1000) => {
   }
 };
 
-// Auto-Fallback Image Generator
 const generateImage = async (prompt, fallbackSeed, style = 'adventurer') => {
   try {
     const payload = { instances: [{ prompt: prompt }], parameters: { sampleCount: 1 } };
@@ -90,7 +90,6 @@ const generateImage = async (prompt, fallbackSeed, style = 'adventurer') => {
     throw new Error("Invalid format from Gemini");
   } catch (error) {
     console.warn("Google Imagen blocked/failed. Engaging procedural fallback...", error);
-    // Returns a dynamic URL instead of base64 if Gemini fails
     return `https://api.dicebear.com/7.x/${style}/svg?seed=${encodeURIComponent(fallbackSeed)}&backgroundColor=transparent`;
   }
 };
@@ -108,23 +107,25 @@ const generateJSON = async (prompt, schema) => {
   return JSON.parse(result.candidates[0].content.parts[0].text);
 };
 
-// Helper to handle mixed base64 and standard URLs
 const getImageSrc = (data) => data.startsWith('http') ? data : `data:image/jpeg;base64,${data}`;
+
+// Helper to render text with line breaks cleanly
+const TextRenderer = ({ text }) => (
+  <div className="space-y-3 text-slate-300 text-sm leading-relaxed">
+    {text.split('\n').map((paragraph, idx) => 
+      paragraph.trim() ? <p key={idx}>{paragraph}</p> : null
+    )}
+  </div>
+);
 
 // --- Custom CSS ---
 const aaaStyles = `
   @keyframes screenShake {
-    0% { transform: translate(1px, 1px) rotate(0deg); }
-    10% { transform: translate(-1px, -2px) rotate(-1deg); }
+    0%, 100% { transform: translate(1px, 1px) rotate(0deg); }
     20% { transform: translate(-3px, 0px) rotate(1deg); }
-    30% { transform: translate(3px, 2px) rotate(0deg); }
     40% { transform: translate(1px, -1px) rotate(1deg); }
-    50% { transform: translate(-1px, 2px) rotate(-1deg); }
     60% { transform: translate(-3px, 1px) rotate(0deg); }
-    70% { transform: translate(3px, 1px) rotate(-1deg); }
     80% { transform: translate(-1px, -1px) rotate(1deg); }
-    90% { transform: translate(1px, 2px) rotate(0deg); }
-    100% { transform: translate(1px, -2px) rotate(-1deg); }
   }
   .animate-shake { animation: screenShake 0.3s cubic-bezier(.36,.07,.19,.97) both; }
   @keyframes float { 0%, 100% { transform: translateY(0px); } 50% { transform: translateY(-10px); } }
@@ -145,7 +146,6 @@ export default function App() {
       <div className="min-h-screen bg-red-950 text-red-200 flex flex-col items-center justify-center p-6 text-center font-mono">
         <Skull size={48} className="text-red-500 mb-4 animate-bounce" />
         <h1 className="text-xl font-bold mb-4 text-white">SYSTEM CRASH PREVENTED</h1>
-        <p className="mb-4 text-sm">The app halted before loading because:</p>
         <div className="bg-black/50 p-4 rounded text-xs w-full max-w-md break-words border border-red-500/50 text-red-400">{fatalInitError}</div>
       </div>
     );
@@ -160,6 +160,7 @@ export default function App() {
   const [chapters, setChapters] = useState([]);
   const [activeBoss, setActiveBoss] = useState(null);
   const [activeCourseId, setActiveCourseId] = useState(null);
+  const [expandedChapterId, setExpandedChapterId] = useState(null);
   
   const [combatState, setCombatState] = useState(null);
   const [combatLog, setCombatLog] = useState([]);
@@ -171,9 +172,8 @@ export default function App() {
 
   useEffect(() => {
     const initAuth = async () => {
-      try {
-        await signInAnonymously(auth);
-      } catch (e) { console.error("Auth Error", e); }
+      try { await signInAnonymously(auth); } 
+      catch (e) { console.error("Auth Error", e); }
     };
     initAuth();
     const unsubscribe = onAuthStateChanged(auth, setUser);
@@ -193,12 +193,9 @@ export default function App() {
         try {
           const initialImage = await generateImage("AAA game asset, high resolution, 2d digital art, cute chibi style baby, realistic person theme, cinematic lighting, dark fantasy background, highly detailed RPG portrait", "Hero-Baby", "adventurer");
           const newProfile = {
-            stage: 0,
-            hp: 100,
-            maxHp: 100,
+            stage: 0, hp: 100, maxHp: 100,
             skills: [{ name: "Basic Strike", type: "attack", power: 15, color: "text-gray-300" }],
-            imageBase64: initialImage || "",
-            coursesCompleted: 0
+            imageBase64: initialImage || "", coursesCompleted: 0
           };
           await setDoc(profileRef, newProfile);
           setProfile(newProfile);
@@ -228,17 +225,18 @@ export default function App() {
     setLoadingText('SCANNING GRAND LINE FOR THREATS...');
     try {
       const bossData = await generateJSON(
-        "Generate a random One Piece themed enemy boss for an RPG. Creative name, short description, hp (150-300), attack (15-30), and detailed image generation prompt.",
+        "Generate a random One Piece themed enemy boss for an RPG. Include a creative name, hp (150-300), attack (15-30), and an imagePrompt. ALSO include 'introStory' (a dramatic paragraph about how this boss is terrorizing the seas) and 'outroStory' (a dramatic paragraph about how the player studying a new skill will exploit the boss's weakness).",
         {
           type: "OBJECT",
           properties: {
             name: { type: "STRING" },
-            description: { type: "STRING" },
             hp: { type: "NUMBER" },
             attack: { type: "NUMBER" },
-            imagePrompt: { type: "STRING" }
+            imagePrompt: { type: "STRING" },
+            introStory: { type: "STRING" },
+            outroStory: { type: "STRING" }
           },
-          required: ["name", "description", "hp", "attack", "imagePrompt"]
+          required: ["name", "hp", "attack", "imagePrompt", "introStory", "outroStory"]
         }
       );
 
@@ -262,7 +260,7 @@ export default function App() {
 
     try {
       const courseData = await generateJSON(
-        `Create a short crash course about "${courseTopic}". Total duration LESS than 60 mins.`,
+        `Create a highly educational crash course about "${courseTopic}". The goal is to actually teach the user this topic. Generate an array of chapters. For EACH chapter, provide a title, duration, and the 'fullContent'. The 'fullContent' MUST contain actual, factual, detailed paragraphs explaining the core concepts of that chapter, just like a real textbook or online course. Do NOT just summarize what it will teach; actually teach it.`,
         {
           type: "OBJECT",
           properties: {
@@ -272,8 +270,12 @@ export default function App() {
               type: "ARRAY",
               items: {
                 type: "OBJECT",
-                properties: { title: { type: "STRING" }, durationMins: { type: "NUMBER" }, summary: { type: "STRING" } },
-                required: ["title", "durationMins", "summary"]
+                properties: { 
+                  title: { type: "STRING" }, 
+                  durationMins: { type: "NUMBER" }, 
+                  fullContent: { type: "STRING", description: "The actual educational material, facts, and explanations." } 
+                },
+                required: ["title", "durationMins", "fullContent"]
               }
             }
           },
@@ -294,7 +296,7 @@ export default function App() {
           courseId: courseRef.id,
           title: ch.title,
           durationMins: ch.durationMins,
-          summary: ch.summary,
+          fullContent: ch.fullContent,
           completed: false
         });
       }
@@ -309,8 +311,21 @@ export default function App() {
     }
   };
 
-  const completeChapter = async (chapterId) => {
+  const completeChapter = async (chapterId, e) => {
+    e.stopPropagation(); // Prevent accordion toggle when clicking complete
     await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'chapters', chapterId), { completed: true });
+    setExpandedChapterId(null); // Auto-collapse on complete
+  };
+
+  const abandonCourse = async () => {
+    if (!window.confirm("Are you sure you want to scrap this protocol? All progress will be lost.")) return;
+    
+    const chaptersToDelete = chapters.filter(c => c.courseId === activeCourseId);
+    for (const ch of chaptersToDelete) {
+      await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'chapters', ch.id));
+    }
+    await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'courses', activeCourseId));
+    setActiveCourseId(null);
   };
 
   const startCombat = () => {
@@ -382,11 +397,8 @@ export default function App() {
     }
 
     await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'main'), {
-      skills: updatedSkills,
-      coursesCompleted: newCoursesCompleted,
-      stage: newStage,
-      imageBase64: newImageBase64,
-      hp: profile.maxHp 
+      skills: updatedSkills, coursesCompleted: newCoursesCompleted,
+      stage: newStage, imageBase64: newImageBase64, hp: profile.maxHp 
     });
 
     if (activeCourseId) {
@@ -405,6 +417,7 @@ export default function App() {
     setView('home');
   };
 
+  // --- Shared UI Components ---
   const ProgressBar = ({ current, max, colorClass, label }) => (
     <div className="w-full">
       <div className="flex justify-between text-[10px] font-bold tracking-widest text-slate-400 mb-1">
@@ -412,16 +425,14 @@ export default function App() {
         <span>{current} / {max}</span>
       </div>
       <div className="h-2 w-full bg-slate-800 rounded-full overflow-hidden border border-slate-700/50">
-        <div 
-          className={`h-full ${colorClass} transition-all duration-500 ease-out shadow-[0_0_10px_currentColor]`} 
-          style={{ width: `${Math.max(0, Math.min(100, (current / max) * 100))}%` }} 
-        />
+        <div className={`h-full ${colorClass} transition-all duration-500 ease-out shadow-[0_0_10px_currentColor]`} 
+             style={{ width: `${Math.max(0, Math.min(100, (current / max) * 100))}%` }} />
       </div>
     </div>
   );
 
   const TopBar = ({ title, showBack = false }) => (
-    <div className="h-16 border-b border-white/5 bg-slate-900/80 backdrop-blur-md flex items-center px-4 sticky top-0 z-50">
+    <div className="h-16 border-b border-white/5 bg-slate-900/80 backdrop-blur-md flex items-center px-4 sticky top-0 z-50 shrink-0">
       {showBack && (
         <button onClick={() => setView('home')} className="p-2 mr-2 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 transition">
           <ArrowLeft size={20} />
@@ -435,7 +446,7 @@ export default function App() {
   );
 
   const BottomNav = () => (
-    <div className="h-20 border-t border-white/10 bg-slate-900/90 backdrop-blur-xl absolute bottom-0 w-full flex justify-around items-center px-6 z-50 pb-6">
+    <div className="h-20 border-t border-white/10 bg-slate-900/90 backdrop-blur-xl absolute bottom-0 w-full flex justify-around items-center px-6 z-50 pb-6 shrink-0">
       <button onClick={() => setView('home')} className={`flex flex-col items-center gap-1 ${view === 'home' ? 'text-blue-400' : 'text-slate-500 hover:text-slate-300'} transition`}>
         <User size={24} className={view === 'home' ? 'drop-shadow-[0_0_8px_rgba(96,165,250,0.8)]' : ''} />
         <span className="text-[10px] font-bold tracking-widest">NEXUS</span>
@@ -451,6 +462,7 @@ export default function App() {
     </div>
   );
 
+  // --- Render Views ---
   const renderLoading = () => (
     <div className="flex-1 bg-slate-950 flex flex-col items-center justify-center text-white relative overflow-hidden">
       <style>{aaaStyles}</style>
@@ -475,9 +487,7 @@ export default function App() {
             <div className="relative w-40 h-40 rounded-full border-2 border-slate-700/50 bg-slate-900 overflow-hidden shadow-2xl flex items-center justify-center">
               {profile?.imageBase64 ? (
                 <img src={getImageSrc(profile.imageBase64)} alt="Avatar" className="w-full h-full object-cover" />
-              ) : (
-                <User size={48} className="text-slate-600" />
-              )}
+              ) : ( <User size={48} className="text-slate-600" /> )}
             </div>
             <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 bg-slate-900 border border-slate-700 px-4 py-1 rounded-full text-[10px] font-black tracking-widest text-amber-400 shadow-lg whitespace-nowrap">
               LVL {STAGES[profile?.stage || 0].level}: {STAGES[profile?.stage || 0].name}
@@ -552,10 +562,11 @@ export default function App() {
         <TopBar title={activeCourseId ? "ACTIVE PROTOCOL" : "ARCHIVE TERMINAL"} showBack />
         <div className="flex-1 overflow-y-auto p-4 space-y-6 pb-28">
           
-          {activeBoss && !activeCourseId && (
+          {/* Active Boss Lore Section */}
+          {activeBoss && (
             <div className="glass-panel p-4 rounded-2xl border-rose-500/30 relative overflow-hidden">
               <div className="absolute right-0 top-0 w-32 h-32 bg-rose-500/10 blur-2xl rounded-full translate-x-1/2 -translate-y-1/2" />
-              <div className="flex items-center gap-4 relative z-10">
+              <div className="flex items-center gap-4 relative z-10 mb-4">
                 <div className="w-16 h-16 rounded-xl overflow-hidden border border-rose-500/50 shrink-0 shadow-[0_0_15px_rgba(225,29,72,0.3)]">
                   {activeBoss.imageBase64 ? 
                     <img src={getImageSrc(activeBoss.imageBase64)} alt="Target" className="w-full h-full object-cover" /> : 
@@ -564,22 +575,33 @@ export default function App() {
                 <div>
                   <h3 className="text-[10px] font-black tracking-widest text-rose-400 mb-1">TARGET LOCKED</h3>
                   <p className="font-bold text-sm text-slate-200 truncate">{activeBoss.name}</p>
-                  <p className="text-[10px] text-slate-500 mt-1">Acquire knowledge to break shield.</p>
                 </div>
               </div>
+              
+              {!allCompleted ? (
+                <div className="bg-rose-950/30 p-3 rounded-lg border border-rose-900/50">
+                  <p className="text-xs text-rose-200 leading-relaxed italic">"{activeBoss.introStory}"</p>
+                </div>
+              ) : (
+                <div className="bg-emerald-950/30 p-3 rounded-lg border border-emerald-900/50 animate-pulse">
+                  <p className="text-xs text-emerald-200 leading-relaxed font-bold">WEAKNESS EXPOSED!</p>
+                  <p className="text-xs text-emerald-100 leading-relaxed mt-1 italic">"{activeBoss.outroStory}"</p>
+                </div>
+              )}
             </div>
           )}
 
+          {/* Form to Generate New Course (Only if no active course) */}
           {!activeCourseId && (
             <form onSubmit={handleCreateCourse} className="space-y-6 mt-6">
               <div className="space-y-2">
-                <label className="text-[10px] font-black tracking-widest text-slate-400 ml-1">KNOWLEDGE QUERY</label>
+                <label className="text-[10px] font-black tracking-widest text-slate-400 ml-1">KNOWLEDGE WEAKNESS QUERY</label>
                 <div className="relative">
                   <input 
                     type="text"
                     value={courseTopic}
                     onChange={(e) => setCourseTopic(e.target.value)}
-                    placeholder="e.g. Quantum Physics, History of Rome"
+                    placeholder="e.g. Data Analytics, Web Development..."
                     className="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-4 text-sm text-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 placeholder-slate-600 transition"
                     required
                   />
@@ -592,42 +614,70 @@ export default function App() {
             </form>
           )}
 
+          {/* Active Course View (Accordion Setup) */}
           {activeCourseId && course && (
             <div className="space-y-4">
-              <div className="glass-panel p-5 rounded-2xl relative overflow-hidden">
+              <div className="glass-panel p-5 rounded-2xl relative overflow-hidden flex justify-between items-start">
                 <div className="absolute top-0 left-0 w-1 h-full bg-blue-500" />
-                <h2 className="text-lg font-bold text-white mb-2">{course.title}</h2>
-                <p className="text-xs text-slate-400 leading-relaxed">{course.description}</p>
+                <div className="pr-4">
+                  <h2 className="text-lg font-bold text-white mb-2">{course.title}</h2>
+                  <p className="text-xs text-slate-400 leading-relaxed">{course.description}</p>
+                </div>
+                <button onClick={abandonCourse} className="p-2 text-slate-500 hover:text-red-400 transition" title="Scrap Protocol">
+                  <XCircle size={20} />
+                </button>
               </div>
 
               <div className="space-y-3">
-                {courseChapters.map((chap, idx) => (
-                  <div key={chap.id} className={`glass-panel p-4 rounded-xl border-l-2 transition-all duration-300 ${chap.completed ? 'border-l-emerald-500 bg-emerald-950/20' : 'border-l-slate-700'}`}>
-                    <div className="flex justify-between items-start mb-2">
-                      <h4 className={`text-sm font-bold ${chap.completed ? 'text-emerald-400' : 'text-slate-200'}`}>
-                        {idx + 1}. {chap.title}
-                      </h4>
-                      <span className="text-[9px] font-black tracking-widest text-slate-500 bg-slate-900 px-2 py-1 rounded border border-slate-700">
-                        {chap.durationMins}M
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-400 mb-4 line-clamp-2">{chap.summary}</p>
-                    <button 
-                      onClick={() => completeChapter(chap.id)}
-                      disabled={chap.completed}
-                      className={`w-full py-3 rounded-lg font-bold text-xs tracking-widest transition-all ${
-                        chap.completed ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 opacity-50 cursor-not-allowed' : 'bg-blue-600/20 text-blue-400 border border-blue-500/30 hover:bg-blue-600/30 active:scale-95'
+                {courseChapters.map((chap, idx) => {
+                  const isExpanded = expandedChapterId === chap.id;
+                  
+                  return (
+                    <div 
+                      key={chap.id} 
+                      onClick={() => !chap.completed && setExpandedChapterId(isExpanded ? null : chap.id)}
+                      className={`glass-panel rounded-xl border-l-2 transition-all duration-300 overflow-hidden cursor-pointer ${
+                        chap.completed ? 'border-l-emerald-500 bg-emerald-950/20' : 
+                        isExpanded ? 'border-l-blue-400 bg-slate-800/80 ring-1 ring-blue-500/50' : 'border-l-slate-700 hover:bg-slate-800/50'
                       }`}
                     >
-                      {chap.completed ? 'VERIFIED' : 'MARK ASSIMILATED'}
-                    </button>
-                  </div>
-                ))}
+                      {/* Accordion Header */}
+                      <div className="p-4 flex justify-between items-center">
+                        <div className="flex-1 pr-4">
+                          <h4 className={`text-sm font-bold ${chap.completed ? 'text-emerald-400' : 'text-slate-200'}`}>
+                            {idx + 1}. {chap.title}
+                          </h4>
+                          <span className="text-[9px] font-black tracking-widest text-slate-500 uppercase mt-1 inline-block">
+                            Est. {chap.durationMins} Mins
+                          </span>
+                        </div>
+                        {!chap.completed && (
+                          <ChevronDown size={20} className={`text-slate-500 transition-transform duration-300 ${isExpanded ? 'rotate-180 text-blue-400' : ''}`} />
+                        )}
+                        {chap.completed && <span className="text-[10px] font-black tracking-widest text-emerald-500">VERIFIED</span>}
+                      </div>
+
+                      {/* Accordion Body (Actual Educational Content) */}
+                      {isExpanded && !chap.completed && (
+                        <div className="px-4 pb-4 border-t border-slate-700/50 pt-4 bg-slate-900/50 cursor-default" onClick={e => e.stopPropagation()}>
+                          <TextRenderer text={chap.fullContent || "Content failed to compile."} />
+                          
+                          <button 
+                            onClick={(e) => completeChapter(chap.id, e)}
+                            className="w-full mt-6 py-3 rounded-lg font-bold text-xs tracking-widest transition-all bg-blue-600/20 text-blue-400 border border-blue-500/30 hover:bg-blue-600/40 active:scale-95 flex justify-center items-center gap-2"
+                          >
+                            <Sparkles size={14} /> KNOWLEDGE ASSIMILATED
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
 
               {allCompleted && activeBoss && (
-                <button onClick={startCombat} className="w-full mt-8 py-5 bg-rose-600 text-white rounded-xl font-black tracking-[0.2em] text-sm shadow-[0_0_30px_rgba(225,29,72,0.6)] animate-pulse active:scale-95 transition-transform">
-                  INITIALIZE COMBAT
+                <button onClick={startCombat} className="w-full mt-8 py-5 bg-rose-600 text-white rounded-xl font-black tracking-[0.2em] text-sm shadow-[0_0_30px_rgba(225,29,72,0.6)] animate-pulse active:scale-95 transition-transform flex justify-center items-center gap-2">
+                  <Swords size={20}/> INITIALIZE COMBAT
                 </button>
               )}
             </div>
