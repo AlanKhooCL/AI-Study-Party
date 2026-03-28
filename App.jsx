@@ -14,11 +14,15 @@ const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/ge
 const IMAGE_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent?key=${apiKey}`;
 
 // --- Firebase Setup ---
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+const firebaseConfig = {
+  apiKey: "AIzaSyB80OS8Lh0xDHhWl95PphjN1B1WiOoK33M",
+  authDomain: "ai-study-party.firebaseapp.com",
+  projectId: "ai-study-party",
+  storageBucket: "ai-study-party.firebasestorage.app",
+  messagingSenderId: "583546365173",
+  appId: "1:583546365173:web:dd2fbec4ec4d20380951bc",
+  measurementId: "G-SFDQ0QELTE"
+};
 
 // --- Constants ---
 const STAGES = [
