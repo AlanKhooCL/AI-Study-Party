@@ -80,15 +80,17 @@ const fetchWithBackoff = async (url, options, retries = 3, delay = 1000) => {
 
 const generateImage = async (prompt) => {
   const payload = {
-    contents: [{ parts: [{ text: prompt }] }],
-    generationConfig: { responseModalities: ['TEXT', 'IMAGE'] }
+    instances: [ { prompt: prompt } ],
+    parameters: { sampleCount: 1 }
   };
   const result = await fetchWithBackoff(IMAGE_API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
   });
-  return result.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData?.data;
+  
+  // Imagen returns base64 data inside the predictions array
+  return result.predictions?.[0]?.bytesBase64Encoded || null;
 };
 
 const generateJSON = async (prompt, schema) => {
