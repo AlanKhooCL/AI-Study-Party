@@ -9,16 +9,39 @@ import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged }
 import { getFirestore, collection, doc, setDoc, getDoc, updateDoc, onSnapshot, addDoc } from 'firebase/firestore';
 
 // --- API Setup ---
-const apiKey = ""; 
+// Uses your .env file. If it can't find it, it will trigger the crash screen safely.
+const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
 const IMAGE_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent?key=${apiKey}`;
 
 // --- Firebase Setup ---
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+const firebaseConfig = {
+  apiKey: "AIzaSyB80OS8Lh0xDHhWl95PphjN1B1WiOoK33M",
+  authDomain: "ai-study-party.firebaseapp.com",
+  projectId: "ai-study-party",
+  storageBucket: "ai-study-party.firebasestorage.app",
+  messagingSenderId: "583546365173",
+  appId: "1:583546365173:web:dd2fbec4ec4d20380951bc",
+  measurementId: "G-SFDQ0QELTE"
+};
+
+const appId = "ai-study-party-v1";
+
+// --- SAFE INITIALIZATION (Prevents the Blank Screen of Death) ---
+let app, auth, db, fatalInitError = null;
+
+try {
+  if (!apiKey) {
+    throw new Error("Gemini API Key is missing! Make sure your .env file is created and Vite has been restarted.");
+  }
+  
+  // These are the lines that went missing!
+  app = initializeApp(firebaseConfig);
+  auth = getAuth(app);
+  db = getFirestore(app);
+} catch (error) {
+  fatalInitError = error.message;
+}
 
 // --- Constants ---
 const STAGES = [
@@ -78,7 +101,6 @@ const generateJSON = async (prompt, schema) => {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
   });
-  // Since we use application/json, we don't need markdown regex cleaning anymore
   return JSON.parse(result.candidates[0].content.parts[0].text);
 };
 
@@ -111,6 +133,20 @@ const aaaStyles = `
 `;
 
 export default function App() {
+  // --- CRASH SCREEN RENDERER ---
+  if (fatalInitError) {
+    return (
+      <div className="min-h-screen bg-red-950 text-red-200 flex flex-col items-center justify-center p-6 text-center font-mono">
+        <Skull size={48} className="text-red-500 mb-4 animate-bounce" />
+        <h1 className="text-xl font-bold mb-4 text-white">SYSTEM CRASH PREVENTED</h1>
+        <p className="mb-4 text-sm">The app halted before loading because:</p>
+        <div className="bg-black/50 p-4 rounded text-xs w-full max-w-md break-words border border-red-500/50 text-red-400">
+          {fatalInitError}
+        </div>
+      </div>
+    );
+  }
+
   const [user, setUser] = useState(null);
   const [view, setView] = useState('loading'); 
   const [loadingText, setLoadingText] = useState('INITIALIZING NEURAL LINK...');
@@ -158,18 +194,23 @@ export default function App() {
         setView(prev => prev === 'loading' ? 'home' : prev);
       } else {
         setLoadingText('GENERATING AVATAR...');
-        const initialImage = await generateImage("AAA game asset, high resolution, 2d digital art, cute chibi style baby, realistic person theme, cinematic lighting, dark fantasy background, highly detailed RPG portrait");
-        const newProfile = {
-          stage: 0,
-          hp: 100,
-          maxHp: 100,
-          skills: [{ name: "Basic Strike", type: "attack", power: 15, color: "text-gray-300" }],
-          imageBase64: initialImage || "",
-          coursesCompleted: 0
-        };
-        await setDoc(profileRef, newProfile);
-        setProfile(newProfile);
-        setView('home');
+        try {
+          const initialImage = await generateImage("AAA game asset, high resolution, 2d digital art, cute chibi style baby, realistic person theme, cinematic lighting, dark fantasy background, highly detailed RPG portrait");
+          const newProfile = {
+            stage: 0,
+            hp: 100,
+            maxHp: 100,
+            skills: [{ name: "Basic Strike", type: "attack", power: 15, color: "text-gray-300" }],
+            imageBase64: initialImage || "",
+            coursesCompleted: 0
+          };
+          await setDoc(profileRef, newProfile);
+          setProfile(newProfile);
+          setView('home');
+        } catch (error) {
+           console.error("Failed to generate avatar.", error);
+           alert("Could not connect to Gemini API. Please check your API key!");
+        }
       }
     }, console.error);
 
